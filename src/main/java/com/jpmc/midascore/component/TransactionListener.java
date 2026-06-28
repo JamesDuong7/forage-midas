@@ -12,9 +12,11 @@ import org.springframework.stereotype.Component;
 public class TransactionListener {
     private static final Logger logger = LoggerFactory.getLogger(TransactionListener.class);
     private final DatabaseConduit databaseConduit;
+    private final IncentiveService incentiveService;
 
-    public TransactionListener(DatabaseConduit databaseConduit) {
+    public TransactionListener(DatabaseConduit databaseConduit, IncentiveService incentiveService) {
         this.databaseConduit = databaseConduit;
+        this.incentiveService = incentiveService;
     }
 
     @KafkaListener(topics = "${general.kafka-topic}")
@@ -36,24 +38,27 @@ public class TransactionListener {
             return;
         }
 
-        // Deduct from sender, add to recipient
+        // Call incentive API to get incentive amount
+        float incentiveAmount = incentiveService.getIncentive(transaction);
+
+        // Deduct from sender, add to recipient (with incentive)
         sender.setBalance(sender.getBalance() - transaction.getAmount());
-        recipient.setBalance(recipient.getBalance() + transaction.getAmount());
+        recipient.setBalance(recipient.getBalance() + transaction.getAmount() + incentiveAmount);
 
         // Save adjusted balances
         databaseConduit.save(sender);
         databaseConduit.save(recipient);
 
         // Record transaction
-        TransactionRecord record = new TransactionRecord(sender, recipient, transaction.getAmount());
+        TransactionRecord record = new TransactionRecord(sender, recipient, transaction.getAmount(), incentiveAmount);
         databaseConduit.save(record);
 
-        logger.info("Transaction processed successfully.");
+        logger.info("Transaction processed successfully with incentive: {}", incentiveAmount);
 
-        // Log waldorf's balance
-        UserRecord waldorf = databaseConduit.findById(5L);
-        if (waldorf != null) {
-            logger.info("WALDORF CURRENT BALANCE: {}", waldorf.getBalance());
+        // Log wilbur's balance
+        UserRecord wilbur = databaseConduit.findById(9L);
+        if (wilbur != null) {
+            logger.info("WILBUR CURRENT BALANCE: {}", wilbur.getBalance());
         }
     }
 }
